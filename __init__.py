@@ -10,7 +10,7 @@
 # License - MIT License, no guarantees of suitability for your app
 #
 ##################################
-version = 0.0.1
+version = "0.0.1"
 
 from minimus import Minimus, render_template, jsonify, parse_formvars, redirect, url_for
 from montydb import MontyClient, set_storage

@@ -1,0 +1,21 @@
+{% extends 'utility/base.html' %}
+{% from 'utility/macros.html' import ckeditor, textfield %}
+
+{% block content %}
+
+<h3 class="subtitle">Edit {{coll}}</h3>
+<p>Free form JSON editing</p>
+<form method="POST">
+    <input type="hidden" value="" name="csrf_token">
+    {{ textfield('content', 'Content', content) }}
+    {% if error %}
+    <div class="notification is-danger is-light is-center">
+        *** Invalid JSON ***
+    </div>
+    {% endif %}
+    <div class="box">
+        <input class="button is-primary" type="submit" value="Save">
+    </div>
+    
+</form>
+{% endblock %}

@@ -1,0 +1,17 @@
+{% extends 'utility/base.html' %}
+{% from 'utility/macros.html' import ckeditor, textfield %}
+
+{% block content %}
+
+<h3 class="subtitle">Edit {{coll}}</h3>
+<p>Free form editing</p>
+<p>Type in a fieldName: Value</p>
+<form method="POST">
+    <input type="hidden" value="" name="csrf_token">
+    {{ textfield('content', 'Content') }}
+    <div class="box">
+        <input class="button is-primary" type="submit" value="Save">
+    </div>
+    
+</form>
+{% endblock %}

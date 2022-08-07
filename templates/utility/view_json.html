@@ -1,0 +1,21 @@
+{% extends 'utility/base.html' %}
+
+{% block content %}
+<div class="box">
+    <h2 class="subtitle">Edit {{coll}} </h2>
+    
+    <a href="/" class="button is-default is-small">Collections</a> <a href="{{ url_for('addJSON', coll=coll) }}" class="button is-info is-small">Add</a>
+    <hr>
+    {% for rec in data %}
+        <div class="box">
+            {% for key, val in rec.items() %}
+                {% if not key == '_id' %}
+                    <p>{{ key }}: {{ val }}</p>
+                {% endif %}
+            {% endfor %}
+            <a href="{{ url_for('utilityJSON', coll=coll, id=rec['_id']) }}" class="button is-info is-small">Edit As Fields</a>
+            <a href="{{ url_for('rawJSON', coll=coll, id=rec['_id']) }}" class="button is-default is-small">Edit Raw JSON</a>
+        </div>
+    {% endfor %}
+</div>
+{% endblock %}

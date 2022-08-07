@@ -1,0 +1,12 @@
+{% extends 'utility/base.html' %}
+{% block content %}
+<div class="box">
+<h1 class="title">Edit JSON</h1>
+<h2 class="subtitle">Collections</h2>
+<ul>
+    {% for coll in collections %}
+        <li><a href="{{ url_for('showJSON', coll=coll) }}">{{ coll }}</a></li>
+    {% endfor %}
+</ul>
+</div>
+{% endblock %}

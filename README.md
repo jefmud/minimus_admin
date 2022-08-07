@@ -8,3 +8,6 @@ early alpha of administrative interface for Minimus framework (similar to Django
 * PyMongo
 * MontyDB
 
+minimus_admin
+
+Expects to find `template/admin`

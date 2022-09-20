@@ -10,7 +10,7 @@
 # License - MIT License, no guarantees of suitability for your app
 #
 ##################################
-__version__ = "0.0.4"
+__version__ = "0.0.3"
 __author__ = 'Jeff Muday'
 __license__ = 'MIT'
 
@@ -23,7 +23,6 @@ from bson import ObjectId
 import os
 from passlib.context import CryptContext
 import functools
-from functools import wraps
 
 pwd_context = CryptContext(
         schemes=["pbkdf2_sha256"],
@@ -98,47 +97,26 @@ class Admin:
         
         
     def login(self, env, filename=None, next=None):
-        """
-        login() - simple login with bootstrap or a Jinja2 file of your choice
-        :param filename: the filename of the template to use
-        :param next: the next page to go to after login
-        """
-        if filename is None:
-            html = self.render_login()
+        html = self.render_login()
         
         if env.get('REQUEST_METHOD') == 'POST':
             fields = parse_formvars(env)
-            username = fields.get('username')
-            password = fields.get('password')
-            user = self.get_user(username)
-            if self.authenticate(username, password):
-                user['_id'] = str(user['_id'])
+            user = self.get_user(fields.get('username'))
+            if self.authenticate(fields.get('username'), fields.get('password')):
                 self.login_user(user)
                 next = 'admin_view_all' if next is None else next
                 return redirect(url_for(next))
-            
-        # if no filename the render internal
-        if filename is None:
-            return html
-        
-        # render external login
-        return render_template(filename)
+        return html
     
     def login_user(self, user):
-        """
-        login_user() - login the user
-            sets the Session to the authenticated user
-            :param user: the user to login
-        """
+        """sets the Session"""
         self.session.connect()
         self.session.data['is_authenticated'] = True
         self.session.data['user'] = user
         self.session.save()
         
     def login_check(self):
-        """
-        login_check() - if require_authentication return user else None
-        """
+        """login_check() - if require_authentication return user else None"""
         if self.require_authentication:
             self.session.connect()
             if self.session.data.get('is_authenticated'):
@@ -149,15 +127,11 @@ class Admin:
         
 
     def logout(self, env, next=None):
-        """
-        login_check(env, next) - if require_authentication return user else None
-        """
         self.logout_user()
         next = next if next else '/'
         return redirect(next)
     
     def logout_user(self):
-        """logout_user() - pops the user out of the session"""
         self.session.connect()
         if 'is_authenticated' in self.session.data:
             self.session.data['is_authenticated'] = False
@@ -165,28 +139,62 @@ class Admin:
             self.session.data.pop('user')
         self.session.save()
     
-
+    
     def view_all(self, env):
-        """
-        view_all(env) - view all collections in the database
-        """
+        """view all collections in the database"""
         if not self.login_check():
             return redirect(url_for('admin_login'))
         collections = self.app.db.list_collection_names()
         return render_template('admin/view_all.html', collections=collections)
     
     def view_collection(self, env, coll):
-        """view_all(env, coll) - view a specific collection in the database"""
+        """view a specific collection in the database"""
         if not self.login_check():
             return redirect(url_for('admin_login'))        
         data = list(self.app.db[coll].find())
         schema = self.app.db['_meta'].find_one({'name':coll})
         for doc in data:
             doc['_id'] = str(doc['_id'])
-
+        #if len(data) == 0:
+        #    return jsonify({'status': 'error', 'message': 'no data'})
         return render_template('admin/view_collection.html', coll=coll, data=data, schema=schema)
-
-
+            
+    def edit_fields(self, env, coll, id):
+        """render a specific record as fields
+		** combine with edit_schema() during refactor
+		"""
+        if not self.login_check():
+            return abort(401)        
+        try:
+            key = {'_id': ObjectId(id)}
+        except Exception as e:
+            return jsonify({'status': 'error', 'message': 'Admin edit_fields(), ' + str(e)})
+        
+        if env.get('REQUEST_METHOD') == 'POST':
+            # write the data
+            try:
+                old_data = self.app.db[coll].find_one(key)
+                data = parse_formvars(env)
+                if '_id' in data:
+                    data.pop('_id')
+                if 'csrf_token' in data:
+                    data.pop('csrf_token')
+                self.app.db[coll].update_one(key, {'$set': data})
+                data['_id'] = id
+                return redirect(url_for('admin_view_collection', coll=coll))
+            except Exception as e:
+                return jsonify({'status': 'error', 'message': 'Admin edit_fields(), ' + str(e)})
+        else:
+            # view the data
+            try:
+                data = self.app.db[coll].find_one(key)
+                data['_id'] = str(data['_id'])
+                fields = fields_transform(data)
+                return render_template('admin/edit_fields.html', coll=coll, fields=fields, id=data['_id'])
+            except Exception as e:
+                return jsonify({'status': 'error', 'message': 'Admin edit_fields(), ' + str(e)})
+    
+    
     def edit_json(self, env, coll, id):
         """render a specific record as JSON"""
         if not self.login_check():
@@ -204,71 +212,14 @@ class Admin:
                 data = json.loads(text_format)
                 #self.app.db[coll].update_one(key, {'$set': data})
                 self.app.db[coll].replace_one(key, data)
+                return redirect(url_for('admin_view_collection', coll=coll))
             except Exception as e:
                 return jsonify({'status': 'error', 'message': 'Admin edit_json, ' + str(e)})
-            finally:
-                return redirect(url_for('admin_view_collection', coll=coll))
-
         else:
             # render the JSON
             if '_id' in data:
                 data.pop('_id')
             return render_template('admin/edit_json.html', coll=coll, content=json.dumps(data), error=None)
-
-
-    def edit_fields(self, env, coll, id):
-        """edit_fields(env, coll, id) - render a specific record as fields
-		** combine with edit_schema() during refactor
-		"""
-        if not self.login_check():
-            return abort(401)        
-        try:
-            if not id == 'new':
-                key = {'_id': ObjectId(id)}
-                old_data = self.app.db[coll].find_one(key)
-            else:
-                old_data = {}
-        except Exception as e:
-            return jsonify({'status': 'error', 'message': 'Admin edit_fields(), ' + str(e)})
-        
-        if env.get('REQUEST_METHOD') == 'POST':
-            # write the data
-            try:
-                fields = parse_formvars(env)
-                data = expand_fields(fields)
-
-                # check which fields changed, add a blank field if it was removed
-                for k,v in old_data.items():
-                    if k not in data.keys():
-                        data[k] = ''
-
-                # clean up the data
-                if '_id' in data:
-                    data.pop('_id')
-                if 'csrf_token' in data:
-                    data.pop('csrf_token')
-
-                # write the data
-                if id == 'new':
-                    id = self.app.db[coll].insert_one(data).inserted_id
-                else:
-                    self.app.db[coll].update_one(key, {'$set': data})
-                data['_id'] = id
-                
-            except Exception as e:
-                return jsonify({'status': 'error', 'message': 'Admin edit_fields(), ' + str(e)})
-            finally:
-                return redirect(url_for('admin_view_collection', coll=coll))
-        else:
-            # view the data
-            try:
-                data = self.app.db[coll].find_one(key)
-                data['_id'] = str(data['_id'])
-                fields = _fields_transform(data)
-                return render_template('admin/edit_fields.html', coll=coll, fields=fields, id=data['_id'])
-            except Exception as e:
-                return jsonify({'status': 'error', 'message': 'Admin edit_fields(), ' + str(e)})
-    
         
     def edit_schema(self, env, coll, id):
         """edit collection item with based on a schema
@@ -277,30 +228,38 @@ class Admin:
         id - the database id
         """
         if not self.login_check():
-            return abort(401)
-
-        # get the data
-        if id == 'new':
-            data = {'_id': 'new'}
-        else:
-            try:
-                key = {'_id': ObjectId(id)}
-            except Exception as e:
-                return jsonify({'status': 'error', 'message': 'Admin edit_schema(), ' + str(e)})
-
-        # view the data
+            return abort(401)        
         try:
-            schema = self.app.db['_meta'].find_one({'name':coll})
-            if not id == 'new':
-                # get existing data
-                data = self.app.db[coll].find_one(key)
-
-            fields = _schema_transform(data, schema)
-            data['_id'] = str(data['_id'])
+            key = {'_id': ObjectId(id)}
         except Exception as e:
             return jsonify({'status': 'error', 'message': 'Admin edit_schema(), ' + str(e)})
-        finally:
-            return render_template('admin/edit_schema.html', coll=coll, fields=fields, id=data['_id'])
+        
+        if env.get('REQUEST_METHOD') == 'POST':
+            # write the data
+            try:
+                old_data = self.app.db[coll].find_one(key)
+                data = parse_formvars(env)
+                if '_id' in data:
+                    data.pop('_id')
+                if 'csrf_token' in data:
+                    data.pop('csrf_token')
+                data = dict(data)
+                #self.app.db[coll].replace_one(key, data) # replace_one kills any data not in schema!
+                self.app.db[coll].update_one(key, {'$set':data})
+                data['_id'] = id
+                return redirect(url_for('admin_view_collection', coll=coll))
+            except Exception as e:
+                return jsonify({'status': 'error', 'message': 'Admin edit_schema(), ' + str(e)})
+        else:
+            # view the data
+            try:
+                schema = self.app.db['_meta'].find_one({'name':coll})
+                data = self.app.db[coll].find_one(key)
+                fields = schema_transform(data, schema)
+                data['_id'] = str(data['_id'])
+                return render_template('admin/edit_schema.html', coll=coll, fields=fields, id=data['_id'])
+            except Exception as e:
+                return jsonify({'status': 'error', 'message': 'Admin edit_schema(), ' + str(e)})
         
     def add_collection_item(self, env, coll):
         """Add a new item to the collection, raw JSON"""
@@ -607,106 +566,11 @@ class Admin:
         print(usage)
         return False    
     
-def login_required(f):
-    """login_required(f) is a decorator for Flask routes that require a login
-    : param {f} : function to decorate
-    : return : decorated function
-    """
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        session.connect()
-        if 'username' not in session.data:
-            return redirect(url_for('login'))
-        return f(*args, **kwargs)
-    return decorated_function
-
-def _merge_dicts(dict1, dict2):
-    """ 
-    _merge_dicts(dict1, dict2) - merge two dictionaries, return the union.
-    Using yield increases efficiency.
-    From
-    """
-    for k in set(dict1.keys()).union(dict2.keys()):
-        if k in dict1 and k in dict2:
-            if isinstance(dict1[k], dict) and isinstance(dict2[k], dict):
-                # unfortunately, a recursive call
-                yield (k, dict(_merge_dicts(dict1[k], dict2[k])))
-            else:
-                # If one of the values is not a dict, you can't continue merging it.
-                # Value from second dict overrides one in first and we move on.
-                yield (k, dict2[k])
-                # Alternatively, replace this with exception raiser to alert you of value conflicts
-        elif k in dict1:
-            yield (k, dict1[k])
-        else:
-            yield (k, dict2[k])
     
-def expand_fields(fields):
-    """
-    expand_fields(fields) - expand flattened fields to nested fields
-    : params data - a flattened record
-    returns expanded fields
-    """
-    data = {}
-    for name, value in fields.items():
-        data = dict( _merge_dicts(data, _nest_value(name, value)) )
-    return data
-
-def _nest_value(name, value):
-    """
-    _nest_value(name, value) - put the fields from a 
-    "flattened" dotted name into nested structure and return
-    
-    :param name - the flattened dotted name
-    :param value - the actual value
-    
-    return nested_value
-    
-    How can I do this cleaner with a dict structure?
-    """
-    data = {}
-    parts = name.strip().split('.')
-    if len(parts) == 1:
-        data.update({parts[0]:value})
-    elif len(parts) == 2:
-        data.update({parts[0]: {parts[1]:value}})
-    elif len(parts) == 3:
-        data.update( {parts[0]: { parts[1] : { parts[2] : value } } } )
-    else:
-        raise ValueError("Schmema depth exceeds maximum limit of 3")
-    return data
-    
-
-def _get_nested_value(name, data):
-    """
-    _get_nested_value(name, data) - get the fields from a "flattened" dotted name
-    :param name - the flattened dotted name
-    :param data - data dictionary of document
-    return value
-    """
-    parts = name.strip().split('.')
-    value = data
-    for part in parts:
-        value = value.get(part, '')
-        if not isinstance(value, dict):
-            return value
-    return None
-
-
-def _schema_transform(data, schema):
-    """_schema_transform(data, schema) - create fields from data document and schema. These
-    fields are used to create a form for editing the document. The fields are ordered.
-
-    :param data - the document data
-    :param schema - the document schema
-    return fields
-    
-    A schema is defined on one line as shown below.
-    
-    dataName : controlToUse :Label of the collection : type : defaultValue
-    
-    type (simple types only)
-    
+def schema_transform(data, schema):
+    """schema_transform() - create fields from data document and schema
+    data - the document data
+    schema - the document schema
     """
     # grab the schema buffer
     schema_lines = schema.get('schema').split('\n')
@@ -715,76 +579,23 @@ def _schema_transform(data, schema):
         if line:
             field = {}
             parts = line.split(':') # break it on ':'
-            # name
             field['name'] = parts[0].strip() # the name part
-            
-            field['control'] = parts[1].strip() # get the type
-            
-            if len(parts) > 2: 
-                field['label'] = parts[2].strip() # the label
+            subparts = parts[1].strip().split(' ') # split it on spaces
+            field['type'] = subparts[0].strip() # get the type
+            if len(subparts) > 2:
+                field['label'] = ' '.join(subparts[1:])
             else:
                 field['label'] = field['name'].title()
-                
-            if len(parts) > 3:
-                field['type'] = parts[3].strip()
-            
-            # value for field(data) is none, get it from schema
-            if data == {}:
-                if len(parts) > 4:
-                    field['value'] = parts[4].strip()
-                else:
-                    # if value is missing, make it an empty string
-                    field['value'] = ''
-            else:
-                # transform multiple depths
-                value = _get_nested_value(field['name'], data)
-                field['value'] = value
-                
+            # if value is missing, make it an empty string
+            field['value'] = data.get(field['name'], '')
             fields.append(field)
     return fields
-
-
-def _unflatten(dictionary, separator='.'):
-    """
-    _unflatten(dictionary, separator='.') - unflatten a dictionary
-    :param dictionary - the dictionary to unflatten
-    :param separator - the separator to use
-    return unflattened dictionary
-    """
-    resultDict = dict()
-    for key, value in dictionary.items():
-        parts = key.split(separator)
-        d = resultDict
-        for part in parts[:-1]:
-            if part not in d:
-                d[part] = dict()
-            d = d[part]
-        d[parts[-1]] = value
-    return resultDict
-
-def _flatten_dict(d, parent_key = '', sep='.'):
-    """
-    _flatten_dict(d, parent_key = '', sep='.') - flatten a nested dictionary
-    :param d - the dictionary to flatten
-    :param parent_key - the parent key
-    :param sep - the separator
-    return flattened dictionary
-    """
-    items = []
-    for k, v in d.items():
-        new_key = parent_key + sep + k if parent_key else k
-        if isinstance(v, dict):
-            items.extend(_flatten_dict(v, new_key, sep=sep).items())
-        else:
-            items.append((new_key, v))
-    return dict(items)
-
-def _fields_transform(fields):
+    
+    
+def fields_transform(fields):
     """transform fields to be used in form"""
-    # flatten dictionary if needed
-    f_fields = _flatten_dict(fields)
     nfields = []
-    for key, value in f_fields.items():
+    for key, value in fields.items():
         nf = {}
         nf['name'] = key
         nf['value'] = str(value)

@@ -1,1 +1,1 @@
-from .minimus_admin import Admin
+from .minimus_admin import Admin, login_required

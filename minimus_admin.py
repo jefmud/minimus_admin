@@ -37,6 +37,8 @@ def encrypt_password(password):
 def check_encrypted_password(password, hashed):
     return pwd_context.verify(password, hashed)
 
+# local session placeholder
+_admin_session = None
 
 class Admin:
     """
@@ -55,8 +57,9 @@ class Admin:
                  require_authentication=True,
                  ):
         """__init__() - initialize the administration area"""
-        global _db
+        global _db, _admin_session, _app
         self.app = app
+        _app = app
         self.users_collection = users_collection
         
         
@@ -65,7 +68,8 @@ class Admin:
             if session is None:
                 raise ValueError("Admin() requires a 'session' to attach to if 'require_authentication' is default or True")
             self.session = session
-            
+            _admin_session = session
+
         ### set up the database ###
         if db_uri:
             app.client = MongoClient(db_uri)
@@ -146,7 +150,19 @@ class Admin:
             return None
         else:
             return True
-        
+
+    def login_required(f):
+        """login_required(f) is a decorator for Flask routes that require a login
+        : param {f} : function to decorate
+        : return : decorated function
+        """
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            self.session.connect()
+            if 'username' not in self.session.data:
+                return redirect(url_for('login'))
+            return f(*args, **kwargs)
+        return decorated_function
 
     def logout(self, env, next=None):
         """
@@ -607,18 +623,6 @@ class Admin:
         print(usage)
         return False    
     
-def login_required(f):
-    """login_required(f) is a decorator for Flask routes that require a login
-    : param {f} : function to decorate
-    : return : decorated function
-    """
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        session.connect()
-        if 'username' not in session.data:
-            return redirect(url_for('login'))
-        return f(*args, **kwargs)
-    return decorated_function
 
 def _merge_dicts(dict1, dict2):
     """ 
@@ -806,6 +810,19 @@ def cook_data(raw_data):
             key = key.strip()
             data[key] = value.strip()
     return data
+
+def login_required(f):
+    """login_required(f) is a decorator for Flask routes that require a login
+    : param {f} : function to decorate
+    : return : decorated function
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        _admin_session.connect()
+        if 'user' not in _admin_session.data:
+            return redirect(_app.url_for('admin_login'))
+        return f(*args, **kwargs)
+    return decorated_function
 
 if __name__ == '__main__':
     print(f"Minimus Admin - VERSION {version}")

@@ -479,7 +479,9 @@ class Admin:
                     _db[self.users_collection].update_one(idx, {'$unset': {key:""}} )
                 else:
                    # user[key] = value
-                   _db[self.users_collection].update_one(idx, {'$set': {key:value}} )
+                    if key=='password':
+                        value = encrypt_password(value)
+                    _db[self.users_collection].update_one(idx, {'$set': {key:value}} )
             return True
         return False
     

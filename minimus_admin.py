@@ -151,7 +151,7 @@ class Admin:
         else:
             return True
 
-    def login_required(f):
+    def login_required(self, f):
         """login_required(f) is a decorator for Flask routes that require a login
         : param {f} : function to decorate
         : return : decorated function
@@ -159,8 +159,8 @@ class Admin:
         @wraps(f)
         def decorated_function(*args, **kwargs):
             self.session.connect()
-            if 'username' not in self.session.data:
-                return redirect(url_for('login'))
+            if 'user' not in self.session.data:
+                return redirect(self.app.url_for('admin_login'))
             return f(*args, **kwargs)
         return decorated_function
 
@@ -197,8 +197,18 @@ class Admin:
             return redirect(url_for('admin_login'))        
         data = list(self.app.db[coll].find())
         schema = self.app.db['_meta'].find_one({'name':coll})
+        # santize id to string
         for doc in data:
             doc['_id'] = str(doc['_id'])
+            
+        if schema:
+            # check for list-view
+            if '^' in schema['schema']:
+                docs = []
+                for raw_doc in data:
+                    this_doc = _schema_transform(raw_doc, schema)
+                    docs.append(this_doc)
+                return render_template('admin/view_collection_list.html', docs=docs, coll=coll)
 
         return render_template('admin/view_collection.html', coll=coll, data=data, schema=schema)
 
@@ -705,11 +715,25 @@ def _schema_transform(data, schema):
 
     :param data - the document data
     :param schema - the document schema
-    return fields
     
-    A schema is defined on one line as shown below.
+    return
+        fields
+    
+    A schema for each field is defined on one line as shown below.
     
     dataName : controlToUse :Label of the collection : type : defaultValue
+    
+    implemented:
+    A caret (^) is used to indicate that the field is shown in a list-view.
+    
+    not implemented in this version:
+    A asterisk (*) is used to indicate a required field.
+    A pipe (|) is used to indicate a list of values.
+    
+    
+    for example:
+    ^name : textbox : Name
+    
     
     type (simple types only)
     
@@ -720,8 +744,24 @@ def _schema_transform(data, schema):
     for line in schema_lines:
         if line:
             field = {}
-            parts = line.split(':') # break it on ':'
-            # name
+            
+            # if there is an '_id' field, then this is an existing document
+            if '_id' in data:
+                field.update({'_id': data['_id']})
+                
+            # break it on ':'
+            parts = line.split(':')
+            
+            # name part
+            
+            # is it a list-view field?
+            field['list-view'] = '^' in parts[0]
+            parts[0] = parts[0].replace('^', '')
+            
+            # is it a required field?
+            field['required'] = '*' in parts[0]
+            parts[0] = parts[0].replace('*', '')
+            
             field['name'] = parts[0].strip() # the name part
             
             field['control'] = parts[1].strip() # get the type

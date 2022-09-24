@@ -11,16 +11,26 @@
     <hr>
     {% for rec in data %}
         <div class="box">
-            {% for key, val in rec.items() %}
-                {% if not key == '_id' %}
-                    <p><b>{{ key }}</b>: {{ val }}</p>
-                {% endif %}
-            {% endfor %}
             {% if schema %}
-            <a href="{{ url_for('admin_edit_schema', coll=coll, id=rec['_id']) }}" class="button is-primary is-small">Edit With Schema</a>
+                {# schema view #}
+                {% for key, val in rec.items() %}
+                    {% if not key == '_id' %}
+                        <p><b>{{ key }}</b>: {{ val }}</p>
+                    {% endif %}
+                {% endfor %}
+                <a href="{{ url_for('admin_edit_schema', coll=coll, id=rec['_id']) }}" class="button is-info is-small">Edit</a>
+                <a href="{{ url_for('admin_edit_json', coll=coll, id=rec['_id']) }}" class="button is-default is-small">JSON</a>
+            {% else %}
+                {# non schema view #}
+                {% for key, val in rec.items() %}
+                    {% if not key == '_id' %}
+                        <p><b>{{ key }}</b>: {{ val }}</p>
+                    {% endif %}
+                {% endfor %}
+
+                <a href="{{ url_for('admin_edit_fields', coll=coll, id=rec['_id']) }}" class="button is-info is-small">Edit</a>
+                <a href="{{ url_for('admin_edit_json', coll=coll, id=rec['_id']) }}" class="button is-default is-small">JSON</a>
             {% endif %}
-            <a href="{{ url_for('admin_edit_fields', coll=coll, id=rec['_id']) }}" class="button is-info is-small">Edit As Fields</a>
-            <a href="{{ url_for('admin_edit_json', coll=coll, id=rec['_id']) }}" class="button is-default is-small">Edit Raw JSON</a>
         </div>
     {% endfor %}
 </div>
